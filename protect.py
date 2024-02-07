@@ -54,13 +54,7 @@ log_file_path = os.path.join(os.path.expanduser(LOGFILE_PATH), 'protect.log')
 if not os.path.isdir(os.path.expanduser(LOGFILE_PATH)):
     logging.error(f"Invalid LOG_FILE_PATH: {LOGFILE_PATH}. The directory does not exist.")
     sys.exit(1)
-# API
-API = config.getboolean('API', 'USE_API', fallback=False)
-API_PATH = config.get('API', 'API_FILE_PATH', fallback='~')
-# Validate API_PATH
-if not os.path.isdir(os.path.expanduser(API_PATH)):
-    logging.error(f"Invalid API_PATH: {API_PATH}. The directory does not exist.")
-    sys.exit(1)
+
 # Sets Display 0 as the display environment. Very important for selenium to launch chrome.
 os.environ['DISPLAY'] = ':0'
 # Chrome directory found by navigating to chrome://version/ and copying the Profile Path
@@ -96,35 +90,12 @@ if LOG_CONSOLE:
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-if API:
-    # get the directory of the current script
-    current_dir = os.path.dirname(os.path.realpath(__file__))
-    # Construct the path to the file in the user's home directory
-    view_status_file = os.path.join(os.path.expanduser(API_PATH), 'view_status.txt')
-    script_start_time_file = os.path.join(os.path.expanduser(API_PATH), 'script_start_time.txt')
-    with open(script_start_time_file, 'w') as f:
-        f.write(str(datetime.now()))
-
-# Check if the API is already running, start it otherwise
-def check_python_script():
-    logging.info("Checking if API is already running...")
-    result = subprocess.run(['pgrep', '-f', 'api.py'], stdout=subprocess.PIPE)
-    if result.stdout:
-        logging.info("API already running.")
-    else:
-        logging.info("Starting API...")
-        # construct the path to api.py
-        api_script = os.path.join(current_dir, 'api.py')
-        subprocess.Popen(['python3', api_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 # Handles the closing of the script with CTRL+C
 def signal_handler(sig, frame):
     global driver
     logging.info('Gracefully shutting down Chrome.')
     if driver is not None:
         driver.quit()
-    if API:
-        with open(view_status_file, 'w') as f:
-            f.write('Quit')
     logging.info("Quitting.")
     sys.exit(0)
 # Register the signal handler
@@ -148,6 +119,7 @@ def start_chrome(url):
             chrome_options.add_argument('--ignore-ssl-errors')  # Ignore SSL errors   
             chrome_options.add_argument("--disable-session-crashed-bubble")
             chrome_options.add_argument("--remote-debugging-port=9222")
+            chrome_options.add_argument("--kiosk")
             chrome_options.add_argument(f"--user-data-dir={chrome_data_dir}")
             chrome_options.add_experimental_option("excludeSwitches", ['enable-automation'])
             chrome_options.binary_location = "/usr/bin/google-chrome-stable"
@@ -172,9 +144,6 @@ def start_chrome(url):
 
     logging.info("Failed to start Chrome after maximum retries.")
     logging.info(f"Starting script again in {int(SLEEP_TIME/120)} minutes.")
-    if API:
-        with open(view_status_file, 'w') as f:
-            f.write('Restarting Chrome')
     time.sleep(SLEEP_TIME/2)
     os.execv(sys.executable, ['python3'] + sys.argv)
 
@@ -221,24 +190,15 @@ def check_loading_issue(driver):
 def check_view(driver, url):
     def handle_retry(driver, url, attempt, max_retries):
         logging.info(f"Retrying... (Attempt {attempt} of {max_retries})")
-        if API:
-            with open(view_status_file, 'w') as f:
-                f.write(f'Retrying: {attempt} of {max_retries}')
         if attempt < max_retries - 1:
             try:
                 logging.info("Attempting to load page from url.")
                 driver.get(url)
                 if handle_page(driver):
                     click_fullscreen_button(driver)
-                if API:
-                    with open(view_status_file, 'w') as f:
-                        f.write('Feed Healthy')
             except Exception as e:
                 logging.exception("Error refreshing chrome tab: ")
                 logging.error(str(e))
-                if API:
-                    with open(view_status_file, 'w') as f:
-                        f.write('Error refreshing')
         # Second to last attempt will kill chrome proccess and start new driver
         if attempt == max_retries - 1:
             try:
@@ -251,15 +211,9 @@ def check_view(driver, url):
                 WebDriverWait(driver, WAIT_TIME).until(lambda d: d.title != "")
                 if handle_page(driver):
                     logging.info("Page successfully reloaded.")
-                    if API:
-                        with open(view_status_file, 'w') as f:
-                            f.write('Feed Healthy')
             except Exception as e:
                 logging.exception("Error killing chrome: ")
                 logging.error(str(e))
-                if API:
-                    with open(view_status_file, 'w') as f:
-                        f.write('Error killing chrome')
         # If last attempt, restart entire script
         elif attempt == max_retries:
             logging.info("Max Attempts reached, restarting script...")
@@ -275,9 +229,6 @@ def check_view(driver, url):
             video_feeds = WebDriverWait(driver, WAIT_TIME).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.liveview__ViewportsWrapper-xf5wrh-2"))
             )
-            if API:
-                with open(view_status_file, 'w') as f:
-                    f.write('Feed Healthy')
             # Reset count and check loading issue
             retry_count = 0
             # Check if browser is in fullscreen
@@ -322,9 +273,6 @@ def login(driver):
         return False
 # Restarts the program with execv to prevent stack overflow
 def restart_program(driver):
-    if API:
-        with open(view_status_file, 'w') as f:
-            f.write('Restarting...')
     logging.info("Gracefully shutting down chrome...")
     driver.quit()
     logging.info(f"Starting script again in {int(SLEEP_TIME/120)} minutes.")
@@ -375,11 +323,6 @@ def hide_cursor(driver):
     """)
 def main():
     logging.info("Starting Fake Viewport v1.5")
-    if API:
-        check_python_script()
-        # Defaults to 'False' until status updates
-        with open(view_status_file, 'w') as f:
-            f.write('Starting...')
     logging.info("Waiting for chrome to load...")
     driver = start_chrome(url)
     # Wait for the page to load
