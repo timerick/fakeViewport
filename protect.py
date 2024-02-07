@@ -264,12 +264,28 @@ def check_view(driver, url):
 # Only returns true if the page after pressing Return is the Live View
 def login(driver):
     try:
+        # Retrieve username and password from environment variables
+        username = os.getenv('USERNAME')
+        password = os.getenv('PASSWORD')
+
+        # Check if username and password are retrieved correctly
+        if not username or not password:
+            logging.error("Username or password not found in environment variables.")
+            return False
+
+        # Find the username input field and send the username
         WebDriverWait(driver, WAIT_TIME).until(EC.presence_of_element_located((By.NAME, 'username'))).send_keys(username)
+
+        # Find the password input field, send the password, and press Enter
         WebDriverWait(driver, WAIT_TIME).until(EC.presence_of_element_located((By.NAME, 'password'))).send_keys(password, Keys.RETURN)
+
+        # Wait for the page to load after login and check if the title contains "Live View"
         return wait_for_title(driver, "Live View")
+
     except TimeoutException:
         logging.exception("Failed to login, elements not found.")
         return False
+
 # Restarts the program with execv to prevent stack overflow
 def restart_program(driver):
     logging.info("Gracefully shutting down chrome...")
