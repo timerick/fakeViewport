@@ -63,8 +63,8 @@ chrome_data_dir = f"/home/{user}/.config/google-chrome/Default"
 
 # dotenv variables
 load_dotenv()
-username = os.getenv('USERNAME')
-password = os.getenv('PASSWORD')
+username = os.getenv('MY_USERNAME')
+password = os.getenv('MY_PASSWORD')
 url = os.getenv('URL')
 driver = None # Declare it globally so that it can be accessed in the signal handler function
 
